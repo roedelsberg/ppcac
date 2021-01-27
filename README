@@ -1,0 +1,168 @@
+###########################################################
+# Perl Package for Customized Annotation Computing (PPCAC)#
+# Version: 1.0                                            #
+# Author: Christian Roedelsperger                         #
+# Email: christian@roedelsperger.de                       #
+#                                                         #
+# WARNING:                                                #
+# These are custom scripts that I used to reannotate      #
+# diplogastrid genomes. My primary goal to make these     #
+# scripts available, is to make my results reproducible.  #
+# However, the scripts are not well documented and        #
+# contain a lot of superfluous code. This may be          #
+# simplified in future versions. If you seriously plan    #
+# to use or modify this package, I would recommend to     #
+# reimplement everything as the basic idea is fairly      #
+# simple and most of the code simply deals with different #
+# file formats.                                           #
+#                                                         #
+# This README file provides the basic documentation       #
+# to use PPCAC in order to generate evidence-based        #
+# gene annotations from transcripts that were assembled   #
+# from RNA-seq data and protein homology of a high        #
+# quality reference species.                              #
+#                                                         #
+# Example data files                                      #
+#                                                         #
+# homology.fa - proteins from a reference species         #
+# transcript_assemblies.fa - assembled transcripts        #
+# genome.fa - Genome Assembly                             #
+#                                                         #
+###########################################################
+
+###########################################################
+#                                                         #
+# 1) call ORFs for assembled transcripts                  #
+#                                                         #
+# The script ppcac_orf.pl takes as input a fasta file     #
+# and identifies the longest complete or partial          #
+# ORF.                                                    #
+#                                                         #
+###########################################################
+
+
+./ppcac_orf.pl transcript_assemblies.fa > test_ORFs.fa
+
+
+###########################################################
+#                                                         #
+# 2) Align data to genome using exonerate                 #
+#                                                         #
+###########################################################
+
+
+ exonerate -m protein2genome --showtargetgff TRUE --bestn 2 --dnawordlen 20 --maxintron 20000 --showalignment FALSE --showvulgar false -q test_ORFs.fa -t genome.fa > test_ORFs.gff
+ 
+ exonerate -m protein2genome --showtargetgff TRUE --bestn 2 --dnawordlen 20 --maxintron 20000 --showalignment FALSE --showvulgar false -q homology.fa -t genome.fa > test_homology.gff
+
+##########################################################
+#                                                        #
+# 3) convert exonerate output to different gff format    #
+#                                                        #
+##########################################################
+
+./ppcac_convert_gff.pl   test_ORFs.gff      > test_ORFs.gff3
+./ppcac_convert_gff.pl  test_homology.gff  > test_homology.gff3
+
+
+
+##########################################################
+#                                                        #
+# 4) add phase information / regenerate sequences        #
+#                                                        #
+##########################################################
+
+./ppcac_generate_annotations.pl   test_ORFs.gff3   genome.fa     > annotated_ORFs_phased.gff3
+mv RefSeq_mrnas.fa annotated_ORF_transcripts.fa 
+mv proteins.fa     annotated_ORF_proteins.fa 
+
+./ppcac_generate_annotations.pl   test_homology.gff3 genome.fa  > annotated_homology_phased.gff3 
+mv proteins.fa     annotated_homology_proteins.fa
+mv RefSeq_mrnas.fa annotated_homology_transcripts.fa 
+
+
+
+##########################################################
+#                                                        #
+# 5) Combine homology and transcribed ORF data           #
+#                                                        #
+##########################################################
+
+
+cat  annotated_ORFs_phased.gff3   annotated_homology_phased.gff3  >  test_joint.gff3
+cat  annotated_ORF_proteins.fa    annotated_homology_proteins.fa   > test_joint.fa
+
+
+
+
+##########################################################
+#                                                        #
+# 6) Generate stats files                                #
+#                                                        #
+# The script ppcac_seq_stats.pl takes as input a fasta   #
+# sequence reports the length, GC content and length     #
+# excluding N characters. In this context, only the      #
+# ORF length (second column in the output is relevant )  #
+#                                                        #
+# The script ppcac_gff2exons.pl takes a gff file as      #
+# input, generates a locus file (.loc format) and        #
+# outputs some stats (number of exons, transcript        #
+# length, genomic locus length )                         #
+#                                                        #
+##########################################################
+
+
+./ppcac_seq_stats.pl  test_joint.fa > test_joint.stats 
+./ppcac_gff2exons.pl   test_joint.gff3 > test_gene_model_stats.txt  ## creates locus file test_joint.loc
+
+
+
+##########################################################
+#                                                        #
+# 7) Extract longest ORF per locus                       #
+#                                                        #
+# The script ppcac_longest_orf_per_locus.pl takes        #
+# the stats and locus files as input and reports         #
+# a list of non redundant gene IDs                       #
+#                                                        #
+##########################################################
+
+
+./ppcac_longest_orf_per_locus.pl  test_joint.loc  test_joint.stats   test_gene_model_stats.txt  > good_ids.txt
+
+
+#########################################################
+#                                                       #
+# 8) Compile final data files                           #
+#                                                       #
+# The script ppcac_extract.pl uses a list of gene       #
+# IDs as input to extract the corresponding annotations #
+# from a gff file.                                      #
+#                                                       #
+# The script ppcac_get_seq.pl extracts selected         #
+# sequences from a fasta file. Usually, it extracts     #
+# random sequences, but with the -l options, it         #
+# will read a list of specified sequence names          #
+#                                                       #
+#########################################################
+
+./ppcac_extract.pl  test_joint.gff3 good_ids.txt    >  non_redundant_annotations_phased.gff3
+./ppcac_get_seq.pl   test_joint.fa 0 -l good_ids.txt > non_redundant_proteins.fa
+
+
+#########################################################
+#                                                       #
+# 9) Remove temporary files                             #
+#                                                       #
+#########################################################
+
+
+rm test* annotated_* good_ids.txt 
+
+
+
+
+
+
+
+
